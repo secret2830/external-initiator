@@ -11,5 +11,6 @@ func init() {
 }
 
 func main() {
+	// run the client
 	client.Run()
 }
