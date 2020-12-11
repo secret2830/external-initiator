@@ -9,7 +9,6 @@ import (
 	"github.com/tidwall/gjson"
 
 	servicesdk "github.com/irisnet/service-sdk-go"
-	"github.com/irisnet/service-sdk-go/codec"
 	"github.com/irisnet/service-sdk-go/service"
 	"github.com/irisnet/service-sdk-go/types"
 	abci "github.com/tendermint/tendermint/abci/types"
@@ -25,10 +24,6 @@ const (
 	DefaultScannerInterval = 5 * time.Second
 
 	ServiceRequestEventType = "new_batch_request_provider"
-)
-
-var (
-	marshaler = codec.NewLegacyAmino()
 )
 
 type biritaSubscriber struct {
@@ -114,12 +109,11 @@ func (bs *biritaSubscription) start() {
 	for {
 		bs.scan()
 
-		if !bs.done {
-			time.Sleep(bs.interval)
-			continue
+		if bs.done {
+			return
 		}
 
-		return
+		time.Sleep(bs.interval)
 	}
 }
 
@@ -228,13 +222,21 @@ func (bs *biritaSubscription) queryServiceRequest(requestID string) (request ser
 		RequestID: requestIDBz,
 	}
 
-	bz := marshaler.MustMarshalJSON(params)
+	bz, err := json.Marshal(params)
+	if err != nil {
+		return request, err
+	}
+
 	res, err := bs.client.ABCIQuery("/custom/service/request", bz)
 	if err != nil {
 		return request, err
 	}
 
-	marshaler.MustUnmarshalJSON(res.Response.Value, &request)
+	err = json.Unmarshal(res.Response.Value, &request)
+	if err != nil {
+		return request, err
+	}
+
 	return
 }
 
