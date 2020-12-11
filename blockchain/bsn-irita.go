@@ -12,6 +12,7 @@ import (
 	"github.com/irisnet/service-sdk-go/service"
 	"github.com/irisnet/service-sdk-go/types"
 	abci "github.com/tendermint/tendermint/abci/types"
+	tmjson "github.com/tendermint/tendermint/libs/json"
 
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/store/models"
@@ -232,7 +233,7 @@ func (bs *biritaSubscription) queryServiceRequest(requestID string) (request ser
 		return request, err
 	}
 
-	err = json.Unmarshal(res.Response.Value, &request)
+	err = tmjson.Unmarshal(res.Response.Value, &request)
 	if err != nil {
 		return request, err
 	}
