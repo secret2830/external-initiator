@@ -114,12 +114,11 @@ func (bs *biritaSubscription) start() {
 	for {
 		bs.scan()
 
-		if !bs.done {
-			time.Sleep(bs.interval)
-			continue
+		if bs.done {
+			return
 		}
 
-		return
+		time.Sleep(bs.interval)
 	}
 }
 
@@ -229,12 +228,14 @@ func (bs *biritaSubscription) queryServiceRequest(requestID string) (request ser
 	}
 
 	bz := marshaler.MustMarshalJSON(params)
+
 	res, err := bs.client.ABCIQuery("/custom/service/request", bz)
 	if err != nil {
 		return request, err
 	}
 
 	marshaler.MustUnmarshalJSON(res.Response.Value, &request)
+
 	return
 }
 
