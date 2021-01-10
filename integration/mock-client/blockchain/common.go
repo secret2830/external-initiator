@@ -29,6 +29,8 @@ func HandleRequest(conn, platform string, msg JsonrpcMessage) ([]JsonrpcMessage,
 		return handleNEARRequest(conn, msg)
 	case "cfx":
 		return handleCfxRequest(conn, msg)
+	case "keeper":
+		return handleKeeperRequest(conn, msg)
 	default:
 		return nil, fmt.Errorf("unexpected platform: %v", platform)
 	}
@@ -36,4 +38,5 @@ func HandleRequest(conn, platform string, msg JsonrpcMessage) ([]JsonrpcMessage,
 
 func SetHttpRoutes(router *gin.Engine) {
 	setXtzRoutes(router)
+	setBSNIritaRoutes(router)
 }

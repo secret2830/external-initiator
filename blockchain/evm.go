@@ -1,14 +1,16 @@
 package blockchain
 
 import (
+	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
+	"net/http"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/whisper/whisperv6"
-	"github.com/smartcontractkit/chainlink/core/eth"
 	"github.com/smartcontractkit/chainlink/core/store/models"
 	"github.com/smartcontractkit/chainlink/core/utils"
 )
@@ -37,7 +39,7 @@ func createEvmFilterQuery(jobid string, strAddresses []string) *filterQuery {
 	topics := [][]common.Hash{{
 		models.RunLogTopic20190207withoutIndexes,
 	}, {
-		common.HexToHash(StringToBytes32(jobid)),
+		StringToBytes32(jobid),
 	}}
 
 	return &filterQuery{
@@ -91,18 +93,19 @@ func (q filterQuery) toMapInterface() (interface{}, error) {
 	return arg, nil
 }
 
-func StringToBytes32(jobid string) string {
-	value := common.RightPadBytes([]byte(jobid), evmWordSize)
+func StringToBytes32(str string) common.Hash {
+	value := common.RightPadBytes([]byte(str), utils.EVMWordByteLen)
 	hx := utils.RemoveHexPrefix(hexutil.Encode(value))
 
 	if len(hx) > utils.EVMWordHexLen {
 		hx = hx[:utils.EVMWordHexLen]
 	}
 
-	return utils.AddHexPrefix(hx)
+	hxStr := utils.AddHexPrefix(hx)
+	return common.HexToHash(hxStr)
 }
 
-func logEventToOracleRequest(log eth.Log) (models.JSON, error) {
+func logEventToOracleRequest(log models.Log) (models.JSON, error) {
 	cborData, dataPrefixBytes, err := logDataParse(log.Data)
 	if err != nil {
 		return models.JSON{}, err
@@ -118,33 +121,33 @@ func logEventToOracleRequest(log eth.Log) (models.JSON, error) {
 	})
 }
 
-func logDataParse(data eth.UntrustedBytes) (cborData []byte, dataPrefixBytes []byte, rerr error) {
+func logDataParse(data []byte) (cborData []byte, dataPrefixBytes []byte, rerr error) {
 	idStart := requesterSize
 	expirationEnd := idStart + idSize + paymentSize + callbackAddrSize + callbackFuncSize + expirationSize
 
 	dataLengthStart := expirationEnd + versionSize + dataLocationSize
 	cborStart := dataLengthStart + dataLengthSize
 
-	if len(data) < dataLengthStart+evmWordSize {
+	if len(data) < dataLengthStart+32 {
 		return nil, nil, errors.New("malformed data")
 	}
 
-	dataLengthBytes, err := data.SafeByteSlice(dataLengthStart, dataLengthStart+evmWordSize)
+	dataLengthBytes, err := models.UntrustedBytes(data).SafeByteSlice(dataLengthStart, dataLengthStart+32)
 	if err != nil {
 		return nil, nil, err
 	}
-	dataLength := whisperv6.BytesToUintBigEndian(dataLengthBytes)
+	dataLength := utils.EVMBytesToUint64(dataLengthBytes)
 
 	if len(data) < cborStart+int(dataLength) {
 		return nil, nil, errors.New("cbor too short")
 	}
 
-	cborData, err = data.SafeByteSlice(cborStart, cborStart+int(dataLength))
+	cborData, err = models.UntrustedBytes(data).SafeByteSlice(cborStart, cborStart+int(dataLength))
 	if err != nil {
 		return nil, nil, err
 	}
 
-	dataPrefixBytes, err = data.SafeByteSlice(idStart, expirationEnd)
+	dataPrefixBytes, err = models.UntrustedBytes(data).SafeByteSlice(idStart, expirationEnd)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -153,4 +156,47 @@ func logDataParse(data eth.UntrustedBytes) (cborData []byte, dataPrefixBytes []b
 
 func bytesToHex(data []byte) string {
 	return utils.AddHexPrefix(hex.EncodeToString(data))
+}
+
+type newHeadsResponseParams struct {
+	Subscription string                 `json:"subscription"`
+	Result       map[string]interface{} `json:"result"`
+}
+
+func ParseBlocknumberFromNewHeads(msg JsonrpcMessage) (*big.Int, error) {
+	var params newHeadsResponseParams
+	err := json.Unmarshal(msg.Params, &params)
+	if err != nil {
+		return nil, err
+	}
+	number, ok := params.Result["number"]
+	if !ok {
+		return nil, errors.New("newHeads result is missing block number")
+	}
+	return hexutil.DecodeBig(fmt.Sprint(number))
+}
+
+func GetBlockNumberPayload() ([]byte, error) {
+	msg := JsonrpcMessage{
+		Version: "2.0",
+		ID:      json.RawMessage(`2`),
+		Method:  "eth_blockNumber",
+	}
+	return json.Marshal(msg)
+}
+
+func sendEthNodePost(endpoint string, payload []byte) (*http.Response, error) {
+	resp, err := http.Post(endpoint, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == 400 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("%s returned 400. This endpoint may not support calls to /monitor", endpoint)
+	}
+	if resp.StatusCode != 200 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("unexpected status code %v from endpoint %s", resp.StatusCode, endpoint)
+	}
+	return resp, nil
 }

@@ -14,7 +14,6 @@ import (
 	"github.com/smartcontractkit/external-initiator/store"
 	"github.com/smartcontractkit/external-initiator/subscriber"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/iotexproject/iotex-proto/golang/iotexapi"
 	"github.com/iotexproject/iotex-proto/golang/iotextypes"
 
@@ -80,7 +79,7 @@ type iotexSubscriber struct {
 	filter *iotexapi.LogsFilter
 }
 
-func (io *iotexSubscriber) SubscribeToEvents(channel chan<- subscriber.Event, _ ...interface{}) (subscriber.ISubscription, error) {
+func (io *iotexSubscriber) SubscribeToEvents(channel chan<- subscriber.Event, _ store.RuntimeConfig) (subscriber.ISubscription, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	sub := io.newSubscription(channel, cancel, clock.New())
 	sub.run(ctx)
@@ -184,7 +183,7 @@ func (io *iotexSubscription) poll(ctx context.Context) {
 }
 
 func createIoTeXLogFilter(jobid string, addresses []string) *iotexapi.LogsFilter {
-	topic := common.HexToHash(StringToBytes32(jobid))
+	topic := StringToBytes32(jobid)
 	return &iotexapi.LogsFilter{
 		Address: addresses,
 		Topics: []*iotexapi.Topics{
